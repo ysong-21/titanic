@@ -1,0 +1,196 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+# Modelling Algorithm
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import make_scorer, accuracy_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, RandomForestRegressor
+
+# Modelling Helpers
+from sklearn.preprocessing import Imputer, Normalizer, scale
+from sklearn.feature_selection import RFECV
+from sklearn.cross_validation import KFold
+
+# Visualisation
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.pylab as pylab
+import seaborn as sns
+
+train = pd.read_csv("Train 1.csv")
+test = pd.read_csv("TT.csv")
+print(train.head(5))
+
+
+
+# Correlations
+print(pd.DataFrame(abs(train.corr()['Survived']).sort_values(ascending=False)))
+
+# Title
+# get the title from the name
+train["title"] = [i.split('.')[0] for i in train.Name]
+train["title"] = [i.split(',')[1] for i in train.title]
+test["title"] = [i.split('.')[0] for i in test.Name]
+test["title"] = [i.split(',')[1] for i in test.title]
+
+# rare_title = ['the Countess','Capt','Lady','Sir','Jonkheer','Don','Major','Col']
+# train.Name = ['rare' for i in train.Name for j in rare_title if i == j]
+# train Data
+
+train["title"] = [i.replace('Ms', 'Miss') for i in train.title]
+train["title"] = [i.replace('Mlle', 'Miss') for i in train.title]
+train["title"] = [i.replace('Mme', 'Mrs') for i in train.title]
+train["title"] = [i.replace('Dr', 'rare') for i in train.title]
+train["title"] = [i.replace('Col', 'rare') for i in train.title]
+train["title"] = [i.replace('Major', 'rare') for i in train.title]
+train["title"] = [i.replace('Don', 'rare') for i in train.title]
+train["title"] = [i.replace('Jonkheer', 'rare') for i in train.title]
+train["title"] = [i.replace('Sir', 'rare') for i in train.title]
+train["title"] = [i.replace('Lady', 'rare') for i in train.title]
+train["title"] = [i.replace('Capt', 'rare') for i in train.title]
+train["title"] = [i.replace('the Countess', 'rare') for i in train.title]
+train["title"] = [i.replace('Rev', 'rare') for i in train.title]
+
+# rare_title = ['the Countess','Capt','Lady','Sir','Jonkheer','Don','Major','Col']
+# train.Name = ['rare' for i in train.Name for j in rare_title if i == j]
+# test data
+
+test['title'] = [i.replace('Ms', 'Miss') for i in test.title]
+test['title'] = [i.replace('Dr', 'rare') for i in test.title]
+test['title'] = [i.replace('Col', 'rare') for i in test.title]
+test['title'] = [i.replace('Dona', 'rare') for i in test.title]
+test['title'] = [i.replace('Rev', 'rare') for i in test.title]
+
+# creat dummies for feature
+train = pd.get_dummies(train, columns=["title"], drop_first=False)
+test = pd.get_dummies(test, columns=['title'], drop_first=False)
+
+
+
+
+# is_alone
+
+train["is_alone"] = [1 if i<2 else 0 for i in train.Family]
+test["is_alone"] = [1 if i<2 else 0 for i in test.Family]
+# age
+train = train[["Survived", "Age", "Pclass", "Sex", "Family", "Embarked", "is_alone"]]
+test = test[["PassengerId", "Age", "Pclass", "Sex", "Family", "Embarked", "is_alone"]]
+
+# writing a function that takes a dataframe with missing values and outputs it by filling the missing values.
+def completing_age(df):
+    age_df = df.loc[:, "Age":]
+
+    temp_train = age_df.loc[age_df.Age.notnull()]  # df with age value
+    temp_test = age_df.loc[age_df.Age.isnull()]  # df without age value
+
+    y = temp_train.Age.values  # setting target variable in Y
+    x = temp_train.loc[:, "Pclass":].values
+
+    rfr = RandomForestRegressor(n_estimators=1500, n_jobs=-1)
+    rfr.fit(x, y)
+
+    predicted_age = rfr.predict(temp_test.loc[:, "Pclass":])
+
+    df.loc[df.Age.isnull(), "Age"] = predicted_age
+
+    return df
+
+
+completing_age(train)
+completing_age(test)
+
+
+# create bins for age
+def age_group_function(age):
+    a = ''
+    if age <= 1:
+        a = 'infant'
+    elif age <= 4:
+        a = 'toddler'
+    elif age <= 13:
+        a = 'child'
+    elif age <= 18:
+        a = 'teenager'
+    elif age <= 35:
+        a = 'Young_Adult'
+    elif age <= 45:
+        a = 'adult'
+    elif age <= 55:
+        a = 'middle_aged'
+    elif age <= 65:
+        a = 'senior_citizen'
+    else:
+        a = 'old'
+    return a
+
+
+train['Age'] = train['Age'].map(age_group_function)
+test['Age'] = test['Age'].map(age_group_function)
+
+
+# create dummies
+train = pd.get_dummies(train, columns=['Age'], drop_first=False)
+test = pd.get_dummies(test, columns=['Age'], drop_first=False)
+
+X_all = train.drop(['Survived'], axis=1)
+Y_all = train['Survived']
+
+print(X_all.head())
+
+#creat bins for age
+
+train_valid_X = X_all[0:625]
+train_valid_Y = Y_all[0:625]
+test_X = X_all[625:]
+test_Y = Y_all[625:]
+train_X, valid_X, train_Y, valid_Y = train_test_split(train_valid_X, train_valid_Y, train_size=.7, test_size=.3,
+                                                      random_state=23)
+
+print(X_all.shape, train_X.shape, test_X.shape, train_Y.shape, valid_Y.shape, test_Y.shape)
+
+RFC = RandomForestClassifier()
+
+parameters = {'n_estimators': [4, 6, 9],
+              'max_features': ['log2', 'sqrt', 'auto'],
+              'criterion': ['entropy', 'gini'],
+              'max_depth': [2, 3, 5, 10],
+              'min_samples_split': [2, 3, 5],
+              'min_samples_leaf': [1,5,8]
+             }
+acc_scorer = make_scorer(accuracy_score)
+
+grid_obj = GridSearchCV(RFC, parameters, scoring=acc_scorer)
+grid_obj = grid_obj.fit(train_X, train_Y)
+
+RFC = grid_obj.best_estimator_
+RFC.fit(train_X, train_Y)
+
+def run_kfold(RFC):
+    kf = KFold(625, n_folds=10)
+    outcome = []
+    fold = 0
+    for train_index, test_index in kf:
+        fold += 1
+        train_X, valid_X = X_all.values[train_index], X_all.values[test_index]
+        train_Y, valid_Y = Y_all.values[train_index], Y_all.values[test_index]
+        RFC.fit(train_X,train_Y)
+        prediction = RFC.predict(valid_X)
+        accuracy = accuracy_score(valid_Y, prediction)
+        outcome.append(accuracy)
+        print("Fold {0} accuracy: {1}".format(fold, accuracy))
+    mean_outcome = np.mean(outcome)
+    print("Mean Accuracy: {0}".format(mean_outcome))
+run_kfold(RFC)
+
+prediction = RFC.predict(test_X)
+print(accuracy_score(test_Y, prediction))
+
+# print(model.score(test_X, test_Y))
+
+ids = test['PassengerId']
+prediction = RFC.predict(test.drop('PassengerId', axis=1))
+
+output = pd.DataFrame({'PassengerId': ids, 'Survived': prediction})
+print(output.head(5))
+output.to_csv('titanic-predictions.csv', index=False)
